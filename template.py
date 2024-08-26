@@ -11,17 +11,25 @@ class AmbienteDiezMil:
         """Definir las variables de instancia de un ambiente.
         ¿Qué es propio de un ambiente de 10.000?
         """
+        # self.puntaje_total = 0
+        # self.puntaje_turno = 0 
+        self.estado = EstadoDiezMil()
         self.dados_restantes = [1, 2, 3, 4, 5, 6]
-        self.puntaje = 0
-        self.tope_turnos = 1000
         self.turno = 1
+        self.tope_turnos = 1000
+        self.flag = False
 
     def reset(self):
         """Reinicia el ambiente para volver a realizar un episodio.
         """
         self.dados_restantes = [1, 2, 3, 4, 5, 6]
-        self.puntaje = 0
+        self.estado.cant_dados_restantes = len(self.dados_restantes)
+        self.estado.puntaje_turno = 0
+        self.estado.puntaje_total = 0
         self.turno = 1
+
+        # Actualizamos el estado después de reiniciar el ambiente.
+        self.estado.actualizar_estado(self)
 
     def step(self, accion):
         """Dada una acción devuelve una recompensa.
@@ -34,19 +42,33 @@ class AmbienteDiezMil:
         Returns:
             tuple[int, bool]: Una recompensa y un flag que indica si terminó el turno. 
         """
-        flag = False
+        puntaje = 0
+        
         if accion == JUGADA_TIRAR:
-            self.puntaje += puntaje_y_no_usados(self.dados_restantes)[0]
-            self.dados_restantes = puntaje_y_no_usados(self.dados_restantes)[1]
+            dados: list[int] = [random.randint(1, 6) for _ in range(self.estado.cant_dados_restantes)]
+            puntaje = puntaje_y_no_usados(dados)[0]
+
+            if puntaje == 0:  
+                # Mala suerte, no suma nada. Pierde el turno.
+                self.estado.fin_turno()
+            else:
+                self.estado.puntaje_turno += puntaje
+                self.estado.puntaje_total += puntaje
+                self.dados_restantes = puntaje_y_no_usados(dados)[1]
+                self.estado.cant_dados_restantes = len(self.dados_restantes)
         
         if accion == JUGADA_PLANTARSE: 
-             self.dados_restantes = [1, 2, 3, 4, 5, 6]
+            self.dados_restantes = [1,2,3,4,5,6]
+            self.estado.fin_turno()
 
-        if self.puntaje >= 10000 or self.turno >= self.tope_turnos:
+        # Actualizamos el estado después de realizar la acción.
+        self.estado.actualizar_estado(self)
+
+        if self.estado.puntaje_total >= 10000 or self.estado.turno >= self.tope_turnos:
             self.reset()
-            flag = True
+            self.flag = True
 
-        return (self.puntaje, flag)
+        return (puntaje, self.flag)
         
 
 class EstadoDiezMil:
@@ -54,22 +76,28 @@ class EstadoDiezMil:
         """Definir qué hace a un estado de diez mil.
         Recordar que la complejidad del estado repercute en la complejidad de la tabla del agente de q-learning.
         """
-        self.puntaje = 0
+        self.puntaje_turno = 0
         self.cant_dados_restantes = 6
+        self.puntaje_total = 0
 
-    def actualizar_estado(self, *args, **kwargs) -> None:
+    def actualizar_estado(self, ambiente, *args, **kwargs) -> None:
         """Modifica las variables internas del estado luego de una tirada.
 
         Args:
             ... (_type_): _description_
             ... (_type_): _description_
         """
-        pass
-    
+        self.puntaje_turno =  ambiente.puntaje_turno
+        self.cant_dados_restantes = ambiente.dados_restantes
+        self.puntaje_total = ambiente.puntaje_total
+        self.turno = ambiente.turno
+
     def fin_turno(self):
         """Modifica el estado al terminar el turno.
         """
+        self.puntaje_turno = 0
         self.cant_dados_restantes = 6
+        self.turno += 1
 
     def __str__(self):
         """Representación en texto de EstadoDiezMil.
@@ -98,19 +126,20 @@ class AgenteQLearning:
             gamma (float): Factor de descuento.
             epsilon (float): Probabilidad de explorar.
         """
-        self.ambiente = AmbienteDiezMil()
-        self.alpha = 0.3
-        self.gamma = 0.9
-        self.epsilon = 0.1
-        self.q = defaultdict(lambda: np.zeros(2)) #Q-Table inicializada: Q[(puntaje_turno, dados_restantes)][accion] -> valor Q
+        self.ambiente = ambiente
+        self.estado = self.ambiente.estado
+        self.alpha = alpha
+        self.gamma = gamma
+        self.epsilon = epsilon    
+        self.Q = defaultdict(lambda: np.zeros(2)) #Q-Table inicializada: Q[(puntaje_turno, dados_restantes, puntaje_total)][accion] -> valor Q
 
-    def elegir_accion(self, estado):
+    def elegir_accion(self):
         """Selecciona una acción de acuerdo a una política ε-greedy.
         """
         if random.random() > self.epsilon:
-            return np.argmax(self.q_table[estado])
+            return np.argmax(self.Q[self.estado])
         else:
-            return np.argmin(self.q_table[estado])
+            return np.argmin(self.Q[self.estado])
 
 
     def entrenar(self, episodios: int, verbose: bool = False) -> None:
@@ -121,9 +150,16 @@ class AgenteQLearning:
             episodios (int): Cantidad de episodios a iterar.
             verbose (bool, optional): Flag para hacer visible qué ocurre en cada paso. Defaults to False.
         """
-        episodio = 0
-        while episodio < episodios:
-            pass
+        for episodio in tqdm(range(episodios)):
+            self.ambiente.reset()
+            
+            while episodio < episodios and not self.ambiente.flag:
+                #estado_anterior = self.estado
+                estado_anterior = (self.estado.puntaje_turno, len(self.ambiente.dados_restantes), self.estado.puntaje_total)
+                accion = self.elegir_accion()
+                recompensa, _ = self.ambiente.step(accion)
+                estado_actual = (self.estado.puntaje_turno, len(self.ambiente.dados_restantes), self.estado.puntaje_total)
+                self.Q[estado_anterior][accion] += self.alpha * (recompensa + self.gamma * np.max(self.Q[estado_actual]) - self.Q[estado_anterior][accion])
 
 
     def guardar_politica(self, filename: str):
