@@ -6,6 +6,10 @@ from jugador import Jugador
 import random
 import csv
 
+# Definimos rangos para puntaje_turno y puntaje_total
+bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 1500, 3000, 5000, 10000] 
+bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
+
 class AmbienteDiezMil:
     
     def __init__(self):
@@ -74,10 +78,6 @@ class EstadoDiezMil:
         self.puntaje_turno_discretizado = 0
         self.puntaje_total_discretizado = 0
 
-        # Definimos rangos para puntaje_turno y puntaje_total
-        self.bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 10000] 
-        self.bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
-
     def actualizar_estado(self, puntaje, cant_dados_restantes, *args, **kwargs) -> None:
         """Modifica las variables internas del estado luego de una tirada.
 
@@ -89,23 +89,10 @@ class EstadoDiezMil:
         self.cant_dados_restantes = cant_dados_restantes
         self.puntaje_total += puntaje
     
-    def asignar_a_bin(self, puntaje, bins):
-        """
-        Asigna un puntaje a un bin basado en los límites proporcionados.
-
-        Args:
-            puntaje (int): Puntaje a asignar.
-            bins (list[int]): Límites de los bins.
-
-        Returns:
-            int: Índice del bin correspondiente.
-        """
-        return np.digitize(puntaje, bins) - 1  # Restar 1 para usar índices basados en 0
-    
     def obtener_estado_discretizado(self):
         # Asignar los valores a los bins correspondientes
-        self.puntaje_turno_discretizado = self.bins_puntaje_turno[self.asignar_a_bin(self.puntaje_turno, self.bins_puntaje_turno)]
-        self.puntaje_total_discretizado = self.bins_puntaje_total[self.asignar_a_bin(self.puntaje_total, self.bins_puntaje_total)]
+        self.puntaje_turno_discretizado = bins_puntaje_turno[asignar_a_bin(self.puntaje_turno, bins_puntaje_turno)]
+        self.puntaje_total_discretizado = bins_puntaje_total[asignar_a_bin(self.puntaje_total, bins_puntaje_total)]
 
         return (self.puntaje_turno_discretizado, self.cant_dados_restantes, self.puntaje_total_discretizado)
 
@@ -151,8 +138,8 @@ class AgenteQLearning:
         self.Q = {} # Q[(puntaje_turno, dados_restantes, puntaje_total)][accion]
 
         # Inicializamos en 0 todas las combinaciones de estados discretizados y acciones
-        for bin_turnos in self.estado.bins_puntaje_turno:
-            for bin_total in self.estado.bins_puntaje_total:
+        for bin_turnos in bins_puntaje_turno:
+            for bin_total in bins_puntaje_total:
                 for k in range(7):  # Considera 0 a 6 dados restantes (0 a 6 valores posibles)
                     estado = (bin_turnos, k, bin_total)
                     self.Q[estado] = {accion: 0 for accion in JUGADAS_STR.keys()}
@@ -198,7 +185,15 @@ class AgenteQLearning:
             
             self.ambiente.reset()
 
-        self.politica_optima = {estado: max(self.Q[estado], key=self.Q[estado].get) for estado in self.Q}
+        for estado in self.Q:
+            # Obtenemos las acciones y sus valores Q
+            acciones = list(self.Q[estado].keys())
+            valores = list(self.Q[estado].values())
+            
+            if max(valores) == min(valores): # Si las acciones tienen el mismo valor estimado para un mismo estado en Q, elige una acción random
+                self.politica_optima[estado] = random.choice(acciones)
+            else:
+                self.politica_optima[estado] = acciones[np.argmax(valores)]
 
     def guardar_politica(self, filename: str):
         """Almacena la política del agente en un formato conveniente.
@@ -218,10 +213,6 @@ class JugadorEntrenado(Jugador):
     def __init__(self, nombre: str, filename_politica: str):
         self.nombre = nombre
         self.politica = self._leer_politica(filename_politica)
-
-        # Definimos rangos para puntaje_turno y puntaje_total
-        self.bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 10000] 
-        self.bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
         
     def _leer_politica(self, filename: str, SEP: str=','):
         """Carga una politica entrenada con un agente de RL, que está guardada
@@ -238,23 +229,10 @@ class JugadorEntrenado(Jugador):
             
             for row in reader:
                 estado = eval(row[0])  # Convertimos el estado de nuevo a una tupla
-                accion_optima = JUGADA_TIRAR if row[1] == JUGADA_TIRAR else JUGADA_PLANTARSE
+                accion_optima = JUGADA_TIRAR if row[1] == '1' else JUGADA_PLANTARSE
                 politica[estado] = accion_optima
                 
         return politica
-    
-    def asignar_a_bin(self, puntaje, bins):
-        """
-        Asigna un puntaje a un bin basado en los límites proporcionados.
-
-        Args:
-            puntaje (int): Puntaje a asignar.
-            bins (list[int]): Límites de los bins.
-
-        Returns:
-            int: Índice del bin correspondiente.
-        """
-        return np.digitize(puntaje, bins) - 1  # Restar 1 para usar índices basados en 0
     
     def jugar(
         self,
@@ -274,16 +252,32 @@ class JugadorEntrenado(Jugador):
         """
         puntaje, no_usados = puntaje_y_no_usados(dados)
 
+        puntaje_turno += puntaje
+        puntaje_total += puntaje
+
         # Convertir el estado actual a su representación discretizada
-        puntaje_turno_discretizado = self.bins_puntaje_turno[self.asignar_a_bin(puntaje_turno, self.bins_puntaje_turno)]
-        puntaje_total_discretizado = self.bins_puntaje_total[self.asignar_a_bin(puntaje_total, self.bins_puntaje_total)]
+        puntaje_turno_discretizado = bins_puntaje_turno[asignar_a_bin(puntaje_turno, bins_puntaje_turno)]
+        puntaje_total_discretizado = bins_puntaje_total[asignar_a_bin(puntaje_total, bins_puntaje_total)]
         
         estado_discretizado = (puntaje_turno_discretizado, len(no_usados), puntaje_total_discretizado)
-        
-        estado = (puntaje_turno, len(no_usados), puntaje_total)
+
         jugada = self.politica[estado_discretizado]
        
         if jugada == JUGADA_PLANTARSE:
             return (JUGADA_PLANTARSE, [])
         elif jugada == JUGADA_TIRAR:
             return (JUGADA_TIRAR, no_usados)
+        
+
+def asignar_a_bin(puntaje, bins):
+    """
+    Asigna un puntaje a un bin basado en los límites proporcionados.
+
+    Args:
+        puntaje (int): Puntaje a asignar.
+        bins (list[int]): Límites de los bins.
+
+    Returns:
+        int: Índice del bin correspondiente.
+    """
+    return np.digitize(puntaje, bins) - 1  # Restar 1 para usar índices basados en 0
