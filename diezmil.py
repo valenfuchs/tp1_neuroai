@@ -1,6 +1,7 @@
 from random import randint
 from utils import puntaje_y_no_usados, separar, JUGADA_PLANTARSE, JUGADA_TIRAR
 from jugador import Jugador, JugadorAleatorio, JugadorSiempreSePlanta
+from template import JugadorEntrenado
 
 class JuegoDiezMil:
     def __init__(self, jugador: Jugador):
@@ -62,7 +63,8 @@ class JuegoDiezMil:
 
 
 def main():
-    jugador = JugadorAleatorio('random')
+    #jugador = JugadorAleatorio('random')
+    jugador = JugadorEntrenado('prueba1', 'politica_10000.csv')
     juego = JuegoDiezMil(jugador)
     (cantidad_turnos, puntaje_final) = juego.jugar(verbose=True)
     print(jugador.nombre, cantidad_turnos, puntaje_final)

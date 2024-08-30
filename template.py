@@ -12,8 +12,6 @@ class AmbienteDiezMil:
         """Definir las variables de instancia de un ambiente.
         ¿Qué es propio de un ambiente de 10.000?
         """
-        # self.puntaje_total = 0
-        # self.puntaje_turno = 0 
         self.estado = EstadoDiezMil()
         self.dados_restantes = [1, 2, 3, 4, 5, 6]
         self.turno = 1
@@ -23,6 +21,7 @@ class AmbienteDiezMil:
     def reset(self):
         """Reinicia el ambiente para volver a realizar un episodio.
         """
+        self.flag = False
         self.dados_restantes = [1, 2, 3, 4, 5, 6]
         self.estado.cant_dados_restantes = len(self.dados_restantes)
         self.estado.puntaje_turno = 0
@@ -47,22 +46,21 @@ class AmbienteDiezMil:
             puntaje, self.dados_restantes = puntaje_y_no_usados(dados)
 
             if puntaje == 0:  # No suma nada. Pierde el turno.
+                self.dados_restantes = [1, 2, 3, 4, 5, 6]
                 self.estado.fin_turno()
                 self.turno += 1
             else:
                 self.estado.actualizar_estado(puntaje, len(self.dados_restantes))
         
         if accion == JUGADA_PLANTARSE: 
-            self.dados_restantes = [1,2,3,4,5,6]
+            self.dados_restantes = [1, 2, 3, 4, 5, 6]
             self.estado.fin_turno()
             self.turno += 1
 
         if self.estado.puntaje_total >= 10000 or self.turno >= self.tope_turnos:
-            self.reset()
             self.flag = True
 
-        return (puntaje, self.flag)
-        
+        return (puntaje, self.flag)        
 
 class EstadoDiezMil:
     def __init__(self):
@@ -72,6 +70,13 @@ class EstadoDiezMil:
         self.puntaje_turno = 0
         self.cant_dados_restantes = 6
         self.puntaje_total = 0
+
+        self.puntaje_turno_discretizado = 0
+        self.puntaje_total_discretizado = 0
+
+        # Definimos rangos para puntaje_turno y puntaje_total
+        self.bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 10000] 
+        self.bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 
     def actualizar_estado(self, puntaje, cant_dados_restantes, *args, **kwargs) -> None:
         """Modifica las variables internas del estado luego de una tirada.
@@ -83,6 +88,26 @@ class EstadoDiezMil:
         self.puntaje_turno += puntaje
         self.cant_dados_restantes = cant_dados_restantes
         self.puntaje_total += puntaje
+    
+    def asignar_a_bin(self, puntaje, bins):
+        """
+        Asigna un puntaje a un bin basado en los límites proporcionados.
+
+        Args:
+            puntaje (int): Puntaje a asignar.
+            bins (list[int]): Límites de los bins.
+
+        Returns:
+            int: Índice del bin correspondiente.
+        """
+        return np.digitize(puntaje, bins) - 1  # Restar 1 para usar índices basados en 0
+    
+    def obtener_estado_discretizado(self):
+        # Asignar los valores a los bins correspondientes
+        self.puntaje_turno_discretizado = self.bins_puntaje_turno[self.asignar_a_bin(self.puntaje_turno, self.bins_puntaje_turno)]
+        self.puntaje_total_discretizado = self.bins_puntaje_total[self.asignar_a_bin(self.puntaje_total, self.bins_puntaje_total)]
+
+        return (self.puntaje_turno_discretizado, self.cant_dados_restantes, self.puntaje_total_discretizado)
 
     def fin_turno(self):
         """Modifica el estado al terminar el turno.
@@ -97,7 +122,7 @@ class EstadoDiezMil:
         Returns:
             str: Representación en texto de EstadoDiezMil.
         """
-        return(f"Estado actual -> Puntaje Turno: {self.puntaje_turno}, Dados Restantes: {self.cant_dados_restantes}, Puntaje Total: {self.puntaje_total}")  
+        return (f"Estado actual -> Puntaje Turno: {self.puntaje_turno}, Dados Restantes: {self.cant_dados_restantes}, Puntaje Total: {self.puntaje_total}")  
 
 class AgenteQLearning:
     def __init__(
@@ -122,25 +147,34 @@ class AgenteQLearning:
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon    
-        self.Q = defaultdict(lambda: {JUGADA_PLANTARSE: 0.0, JUGADA_TIRAR: 0.0}) # Q[(puntaje_turno, dados_restantes, puntaje_total)][accion]
+        
+        self.Q = {} # Q[(puntaje_turno, dados_restantes, puntaje_total)][accion]
+
+        # Inicializamos en 0 todas las combinaciones de estados discretizados y acciones
+        for bin_turnos in self.estado.bins_puntaje_turno:
+            for bin_total in self.estado.bins_puntaje_total:
+                for k in range(7):  # Considera 0 a 6 dados restantes (0 a 6 valores posibles)
+                    estado = (bin_turnos, k, bin_total)
+                    self.Q[estado] = {accion: 0 for accion in JUGADAS_STR.keys()}
+
         self.politica_optima = {}
 
-    def elegir_accion(self):
+    def elegir_accion(self, estado):
         """Selecciona una acción de acuerdo a una política ε-greedy.
         """    
         # Obtenemos las acciones y sus valores Q
-        acciones = list(self.Q[self.estado].keys())
-        valores = list(self.Q[self.estado].values())
-        
+        acciones = list(self.Q[estado].keys())
+        valores = list(self.Q[estado].values())
+
         if max(valores) == min(valores): 
             # Si los valores en Q de ambas acciones en ese estado son iguales, entonces elige una acción de forma aleatoria
             return random.choice(acciones) 
 
         else:
             if random.random() > self.epsilon:
-                return acciones[max(valores)]
+                return acciones[np.argmax(valores)]
             else:
-                return acciones[min(valores)]
+                return acciones[np.argmin(valores)]
 
 
     def entrenar(self, episodios: int, verbose: bool = False) -> None:
@@ -151,19 +185,20 @@ class AgenteQLearning:
             episodios (int): Cantidad de episodios a iterar.
             verbose (bool, optional): Flag para hacer visible qué ocurre en cada paso. Defaults to False.
         """
-        for episodio in tqdm(range(episodios)):
-            while episodio < episodios and not self.ambiente.flag:
-                #estado_anterior = self.estado
-                estado_anterior = (self.estado.puntaje_turno, self.estado.cant_dados_restantes, self.estado.puntaje_total)
-                accion = self.elegir_accion()
+        for i in tqdm(range(episodios)):
+            while self.ambiente.turno < self.ambiente.tope_turnos and not self.ambiente.flag:
+                estado_anterior = self.estado.obtener_estado_discretizado()
+                accion = self.elegir_accion(estado_anterior)
                 recompensa, _ = self.ambiente.step(accion)
-                estado_actual = (self.estado.puntaje_turno, self.estado.cant_dados_restantes, self.estado.puntaje_total)
+                estado_actual = self.estado.obtener_estado_discretizado()
+                #valor_anterior = self.Q[estado_anterior][accion]
                 self.Q[estado_anterior][accion] += self.alpha * (recompensa + self.gamma * np.max(list(self.Q[estado_actual].values())) - self.Q[estado_anterior][accion])
-                print(f"Estado: {estado_anterior}, Acción: {accion}, Valor Q actualizado de {self.Q[estado_anterior][accion]} a {self.Q[estado_anterior][accion]}")
+                
+                #print(f"Estado: {estado_anterior}, Acción: {accion}, Valor Q actualizado de {valor_anterior} a {self.Q[estado_anterior][accion]}")
             
             self.ambiente.reset()
 
-        self.politica_optima = {estado: np.argmax(self.Q[estado]) for estado in self.Q}
+        self.politica_optima = {estado: max(self.Q[estado], key=self.Q[estado].get) for estado in self.Q}
 
     def guardar_politica(self, filename: str):
         """Almacena la política del agente en un formato conveniente.
@@ -183,6 +218,10 @@ class JugadorEntrenado(Jugador):
     def __init__(self, nombre: str, filename_politica: str):
         self.nombre = nombre
         self.politica = self._leer_politica(filename_politica)
+
+        # Definimos rangos para puntaje_turno y puntaje_total
+        self.bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 10000] 
+        self.bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
         
     def _leer_politica(self, filename: str, SEP: str=','):
         """Carga una politica entrenada con un agente de RL, que está guardada
@@ -199,10 +238,23 @@ class JugadorEntrenado(Jugador):
             
             for row in reader:
                 estado = eval(row[0])  # Convertimos el estado de nuevo a una tupla
-                accion_optima = JUGADA_TIRAR if row[1] == "JUGADA_TIRAR" else JUGADA_PLANTARSE
+                accion_optima = JUGADA_TIRAR if row[1] == JUGADA_TIRAR else JUGADA_PLANTARSE
                 politica[estado] = accion_optima
                 
         return politica
+    
+    def asignar_a_bin(self, puntaje, bins):
+        """
+        Asigna un puntaje a un bin basado en los límites proporcionados.
+
+        Args:
+            puntaje (int): Puntaje a asignar.
+            bins (list[int]): Límites de los bins.
+
+        Returns:
+            int: Índice del bin correspondiente.
+        """
+        return np.digitize(puntaje, bins) - 1  # Restar 1 para usar índices basados en 0
     
     def jugar(
         self,
@@ -221,11 +273,17 @@ class JugadorEntrenado(Jugador):
             tuple[int,list[int]]: Una jugada y la lista de dados a tirar.
         """
         puntaje, no_usados = puntaje_y_no_usados(dados)
+
+        # Convertir el estado actual a su representación discretizada
+        puntaje_turno_discretizado = self.bins_puntaje_turno[self.asignar_a_bin(puntaje_turno, self.bins_puntaje_turno)]
+        puntaje_total_discretizado = self.bins_puntaje_total[self.asignar_a_bin(puntaje_total, self.bins_puntaje_total)]
+        
+        estado_discretizado = (puntaje_turno_discretizado, len(no_usados), puntaje_total_discretizado)
         
         estado = (puntaje_turno, len(no_usados), puntaje_total)
-        jugada = self.politica[estado]
+        jugada = self.politica[estado_discretizado]
        
         if jugada == JUGADA_PLANTARSE:
             return (JUGADA_PLANTARSE, [])
-        elif jugada==JUGADA_TIRAR:
+        elif jugada == JUGADA_TIRAR:
             return (JUGADA_TIRAR, no_usados)
