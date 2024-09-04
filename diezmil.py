@@ -49,7 +49,7 @@ class JuegoDiezMil:
                     elif jugada == JUGADA_TIRAR:
                         dados_a_separar = separar(dados, dados_a_tirar)
                         assert len(dados_a_separar) + len(dados_a_tirar) == len(dados)
-                        puntaje_tirada, dados_no_usados = puntaje_y_no_usados(dados_a_separar) #NO ENTIENDO POR QUÉ TIRA LOS DADOS QUE SUMARON PUNTOS
+                        puntaje_tirada, dados_no_usados = puntaje_y_no_usados(dados_a_separar)
                         assert puntaje_tirada > 0 and len(dados_no_usados) == 0
                         puntaje_turno += puntaje_tirada
                         # Cuando usó todos los dados, vuelve a tirar todo.
@@ -64,33 +64,14 @@ class JuegoDiezMil:
 
 
 def main():
-    jugadorEntrenado_politica1 = JugadorEntrenado('entrenado50000', 'politica_50000.csv')
-    juegoEntrenado1 = JuegoDiezMil(jugadorEntrenado_politica1)
+    jugadorEntrenado = JugadorEntrenado('entrenado', 'politicas/politica_200000_menosBins.csv')
+    juegoEntrenado = JuegoDiezMil(jugadorEntrenado)
 
-    jugadorEntrenado_politica2 = JugadorEntrenado('entrenado100000', 'politica_100000.csv')
-    juegoEntrenado2 = JuegoDiezMil(jugadorEntrenado_politica2)
-
-    jugadorAleatorio = JugadorAleatorio('aleatorio')
-    juegoAleatorio = JuegoDiezMil(jugadorAleatorio)
-
-    jugadorPlantado = JugadorSiempreSePlanta('plantado')
-    juegoPlantado = JuegoDiezMil(jugadorPlantado)
-
-    cantidad_turnos_entrenado_politica1 = []
-    cantidad_turnos_entrenado_politica2 = []
-    cantidad_turnos_aleatorio = []
-    cantidad_turno_plantado = []
-
-    for i in range(500):
-        cantidad_turnos_entrenado_politica1.append(juegoEntrenado1.jugar(verbose=True)[0])
-        cantidad_turnos_entrenado_politica2.append(juegoEntrenado2.jugar(verbose=True)[0])
-        cantidad_turnos_aleatorio.append(juegoAleatorio.jugar(verbose=True)[0])
-        cantidad_turno_plantado.append(juegoPlantado.jugar(verbose=True)[0])
+    turnos_entrenado = []
+    for i in range(1000):
+        turnos_entrenado.append(juegoEntrenado.jugar(verbose=True)[0])
     
-    print(f"Promedio Turnos Entrenado (50.000 Episodios): {np.mean(cantidad_turnos_entrenado_politica1)}")
-    print(f"Promedio Turnos Entrenado (100.000 Episodios): {np.mean(cantidad_turnos_entrenado_politica2)}")
-    print(f"Promedio Turnos Aleatorio: {np.mean(cantidad_turnos_aleatorio)}")
-    print(f"Promedio Turnos Plantado: {np.mean(cantidad_turno_plantado)}")
+    print(f"Promedio Turnos Entrenado (200.000 Episodios), menos bins: {np.mean(turnos_entrenado)}")
 
 if __name__ == '__main__':
     main()

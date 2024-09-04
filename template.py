@@ -7,7 +7,10 @@ import random
 import csv
 
 # Definimos rangos para puntaje_turno y puntaje_total
-bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 1500, 3000, 5000, 10000] 
+bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 10000] # Con saltos más grandes
+#bins_puntaje_turno = [0, 150, 300, 450, 650, 1000, 1500, 3000, 5000, 10000] # Con saltos moderados
+#bins_puntaje_turno = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000] # Con saltos más pequeños
+
 bins_puntaje_total = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 
 class AmbienteDiezMil:
